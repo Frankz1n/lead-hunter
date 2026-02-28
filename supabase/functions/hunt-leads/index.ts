@@ -80,11 +80,14 @@ serve(async (req) => {
         if (txError) throw new Error(`Erro ao registrar transação: ${txError.message}`)
 
         // Insere Leads Falsos (Mockados) no CRM
-        const mockLeads = [
-            { user_id: user.id, company_name: "Oficina Master Express", address: region, no_website: true, ai_score: 98, status: 'Novos Leads' },
-            { user_id: user.id, company_name: "Clínica Sorriso Center", address: region, no_website: true, ai_score: 92, status: 'Novos Leads' },
-            { user_id: user.id, company_name: "Mecânica Dois Irmãos", address: region, no_website: true, ai_score: 85, status: 'Novos Leads' }
-        ]
+        const mockLeads = Array.from({ length: leadVolume }).map((_, i) => ({
+            user_id: user.id,
+            company_name: `Empresa Mockada ${i + 1}`,
+            address: region,
+            no_website: Math.random() > 0.5,
+            ai_score: Math.floor(Math.random() * (99 - 70 + 1) + 70),
+            status: 'Novos Leads'
+        }))
 
         const { error: leadsError } = await supabaseClient.from('leads').insert(mockLeads)
 

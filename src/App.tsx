@@ -5,10 +5,10 @@ import DashboardLayout from './components/DashboardLayout';
 import Login from './pages/Login';
 import Search from './pages/Search';
 
-import Crm from './pages/Crm';
+import Wallet from './pages/Wallet';
+import Profile from './pages/Profile';
 
-// Placeholder Pages for demonstration
-const Wallet = () => <div className="p-4"><h1 className="text-2xl font-bold">Carteira</h1><p>Funcionalidade em desenvolvimento.</p></div>;
+import Crm from './pages/Crm';
 
 function App() {
   return (
@@ -24,6 +24,7 @@ function App() {
               <Route path="/crm" element={<Crm />} />
               <Route path="/search" element={<Search />} />
               <Route path="/wallet" element={<Wallet />} />
+              <Route path="/profile" element={<Profile />} />
 
               {/* Redirect any unknown protected route to search */}
               <Route path="*" element={<Navigate to="/search" replace />} />
