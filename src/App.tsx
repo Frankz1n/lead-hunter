@@ -5,8 +5,9 @@ import DashboardLayout from './components/DashboardLayout';
 import Login from './pages/Login';
 import Search from './pages/Search';
 
+import Crm from './pages/Crm';
+
 // Placeholder Pages for demonstration
-const Dashboard = () => <div className="p-4"><h1 className="text-2xl font-bold">Dashboard</h1><p>Bem-vindo ao LeadHunter!</p></div>;
 const Wallet = () => <div className="p-4"><h1 className="text-2xl font-bold">Carteira</h1><p>Funcionalidade em desenvolvimento.</p></div>;
 
 function App() {
@@ -20,12 +21,12 @@ function App() {
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
             <Route element={<DashboardLayout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/crm" element={<Crm />} />
               <Route path="/search" element={<Search />} />
               <Route path="/wallet" element={<Wallet />} />
 
-              {/* Redirect any unknown protected route to dashboard */}
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              {/* Redirect any unknown protected route to search */}
+              <Route path="*" element={<Navigate to="/search" replace />} />
             </Route>
           </Route>
 

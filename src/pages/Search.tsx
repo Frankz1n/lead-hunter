@@ -89,7 +89,7 @@ export default function Search() {
             }
 
             // Sucesso! Redirecionar para o CRM/Dashboard
-            navigate('/dashboard');
+            navigate('/crm');
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Erro desconhecido ao disparar a varredura. Verifique seu saldo de créditos.';
             setErrorMessage(message);
