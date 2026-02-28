@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LayoutDashboard, Search, LogOut, User } from 'lucide-react';
+import { LayoutDashboard, Search, LogOut, User, Wallet as WalletIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export default function DashboardLayout() {
     const { signOut, user } = useAuth();
+    const navigate = useNavigate();
     const [balance, setBalance] = useState<number | null>(null);
 
     useEffect(() => {
@@ -95,6 +96,19 @@ export default function DashboardLayout() {
                         <LayoutDashboard className="w-5 h-5" />
                         CRM Kanban
                     </NavLink>
+
+                    <NavLink
+                        to="/wallet"
+                        className={({ isActive }) =>
+                            `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive
+                                ? 'bg-blue-50 text-blue-600'
+                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                            }`
+                        }
+                    >
+                        <WalletIcon className="w-5 h-5" />
+                        Carteira
+                    </NavLink>
                 </nav>
 
                 <div className="p-4 border-t border-slate-200">
@@ -128,7 +142,11 @@ export default function DashboardLayout() {
                                 {balance !== null ? balance.toLocaleString('pt-BR') : '...'} Leads
                             </span>
                         </div>
-                        <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 border border-slate-200 cursor-pointer hover:bg-slate-200 transition-colors">
+                        <div
+                            onClick={() => navigate('/profile')}
+                            className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 border border-slate-200 cursor-pointer hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all"
+                            title="Meu Perfil"
+                        >
                             <User className="w-5 h-5" />
                         </div>
                         {/* Mobile Sair Button */}
