@@ -16,6 +16,7 @@ import {
 import type { DragStartEvent, DragOverEvent, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { SortableColumn, SortableLead } from '../components/KanbanBoard';
+import ReactMarkdown from 'react-markdown';
 import 'leaflet/dist/leaflet.css';
 
 // Fix Leaflet icons (known issue with react-leaflet)
@@ -820,7 +821,15 @@ export default function Crm() {
                                                 ? 'bg-blue-600 text-white rounded-tr-sm'
                                                 : 'bg-white text-slate-800 border border-slate-200 rounded-tl-sm'
                                                 }`}>
-                                                {msg.content}
+                                                {msg.role === 'user' ? (
+                                                    msg.content
+                                                ) : (
+                                                    <div className="prose prose-sm max-w-none text-current prose-p:leading-relaxed prose-pre:bg-slate-100 prose-pre:text-slate-800 prose-a:text-blue-600 hover:prose-a:text-blue-500 prose-strong:text-current prose-strong:font-bold prose-ul:list-disc prose-ul:pl-4 prose-ol:list-decimal prose-ol:pl-4 prose-li:my-1 space-y-2 break-words">
+                                                        <ReactMarkdown>
+                                                            {msg.content}
+                                                        </ReactMarkdown>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
