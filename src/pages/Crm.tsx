@@ -198,14 +198,49 @@ export default function Crm() {
         { role: 'assistant', content: 'Olá! Sou seu assistente de IA. Como posso ajudar com este lead?' }
     ]);
     const [chatInput, setChatInput] = useState('');
+    const [isChatLoading, setIsChatLoading] = useState(false);
 
-    const handleSendMessage = (e: React.FormEvent) => {
+    const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!chatInput.trim()) return;
+        if (!chatInput.trim() || isChatLoading || !selectedLead) return;
 
-        setChatMessages([...chatMessages, { role: 'user', content: chatInput }]);
+        const newUserMessage = { role: 'user' as const, content: chatInput };
+        const updatedMessages = [...chatMessages, newUserMessage];
+
+        setChatMessages(updatedMessages);
         setChatInput('');
-        // NOTE: future API call to OpenAI goes here
+        setIsChatLoading(true);
+
+        try {
+            const { data, error } = await supabase.functions.invoke('chat-ai', {
+                body: {
+                    lead_id: selectedLead.id,
+                    lead_data: {
+                        nome: selectedLead.company_name,
+                        nicho: selectedLead.niche,
+                        ai_reason: selectedLead.ai_reason,
+                        ai_score: selectedLead.ai_score,
+                        reviews: selectedLead.reviews_count
+                    },
+                    messages: updatedMessages
+                }
+            });
+
+            if (error) throw error;
+
+            if (data && data.reply) {
+                setChatMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
+            } else {
+                setChatMessages(prev => [...prev, { role: 'assistant', content: 'Desculpe, não consegui obter uma resposta.' }]);
+            }
+
+        } catch (error) {
+            console.error('Erro no chat:', error);
+            toast.error('Erro ao comunicar com a IA.');
+            setChatMessages(prev => [...prev, { role: 'assistant', content: 'Ocorreu um erro no servidor. Tente novamente.' }]);
+        } finally {
+            setIsChatLoading(false);
+        }
     };
 
     // Effect to geocode address when modal opens (only if lat/lng are missing)
@@ -762,6 +797,15 @@ export default function Crm() {
                                             </div>
                                         </div>
                                     ))}
+                                    {isChatLoading && (
+                                        <div className="flex justify-start">
+                                            <div className="bg-white text-slate-500 border border-slate-200 rounded-2xl rounded-tl-sm px-4 py-3 text-sm shadow-sm flex items-center gap-1.5 h-[46px]">
+                                                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '-0.3s' }}></div>
+                                                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '-0.15s' }}></div>
+                                                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Input Area */}
@@ -772,14 +816,19 @@ export default function Crm() {
                                             value={chatInput}
                                             onChange={(e) => setChatInput(e.target.value)}
                                             placeholder="Pergunte à IA sobre este lead..."
-                                            className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 transition-all placeholder:text-slate-400"
+                                            disabled={isChatLoading}
+                                            className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 transition-all placeholder:text-slate-400 disabled:opacity-50"
                                         />
                                         <button
                                             type="submit"
-                                            disabled={!chatInput.trim()}
+                                            disabled={!chatInput.trim() || isChatLoading}
                                             className="absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
                                         >
-                                            <Zap className="w-4 h-4" />
+                                            {isChatLoading ? (
+                                                <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                                            ) : (
+                                                <Zap className="w-4 h-4" />
+                                            )}
                                         </button>
                                     </form>
                                     <p className="text-[10px] text-center text-slate-400 mt-2">IA pode cometer erros. Considere verificar as informações importantes.</p>
