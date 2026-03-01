@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Globe, Flame, X, MapPin as MapPinIcon, Building2 } from 'lucide-react';
+import { Globe, Flame, X, MapPin as MapPinIcon, Building2, Zap } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -25,9 +25,15 @@ interface Lead {
     region?: string;
     niche: string;
     no_website: boolean;
-    whatsapp_phone: string;
+    website?: string;
+    phone?: string;
+    whatsapp_phone?: string;
+    reviews_count?: number;
+    latitude?: number;
+    longitude?: number;
     ai_score: number;
-    ai_summary: string;
+    ai_summary?: string;
+    ai_reason?: string;
     status: string;
     created_at: string;
 }
@@ -51,11 +57,14 @@ export default function Crm() {
     const [isGeocoding, setIsGeocoding] = useState(false);
 
     useEffect(() => {
-        const fetchLeads = async () => {
+        let subscription: any = null;
+
+        const fetchLeadsAndSubscribe = async () => {
             try {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (!user) return;
 
+                // 1. Fetch initial leads
                 const { data, error } = await supabase
                     .from('leads')
                     .select('*')
@@ -63,7 +72,26 @@ export default function Crm() {
                     .order('created_at', { ascending: false });
 
                 if (error) throw error;
-                if (data) setLeads(data as Lead[]);
+                if (data) setLeads(data as unknown as Lead[]);
+
+                // 2. Subscribe to new leads
+                subscription = supabase
+                    .channel('public:leads')
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'INSERT',
+                            schema: 'public',
+                            table: 'leads',
+                            filter: `user_id=eq.${user.id}`
+                        },
+                        (payload) => {
+                            console.log('Novo lead recebido em tempo real:', payload.new);
+                            setLeads((currentLeads) => [payload.new as unknown as Lead, ...currentLeads]);
+                        }
+                    )
+                    .subscribe();
+
             } catch (error) {
                 console.error('Erro ao buscar leads:', error);
             } finally {
@@ -71,12 +99,51 @@ export default function Crm() {
             }
         };
 
-        fetchLeads();
+        fetchLeadsAndSubscribe();
+
+        // Cleanup
+        return () => {
+            if (subscription) {
+                supabase.removeChannel(subscription);
+            }
+        };
     }, []);
 
-    // Effect to geocode address when modal opens
+    // Chat State for AI Assistant
+    const [activeTab, setActiveTab] = useState<'details' | 'chat'>('details');
+    const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant', content: string }[]>([
+        { role: 'assistant', content: 'Olá! Sou seu assistente de IA. Como posso ajudar com este lead?' }
+    ]);
+    const [chatInput, setChatInput] = useState('');
+
+    const handleSendMessage = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!chatInput.trim()) return;
+
+        setChatMessages([...chatMessages, { role: 'user', content: chatInput }]);
+        setChatInput('');
+        // NOTE: future API call to OpenAI goes here
+    };
+
+    // Effect to geocode address when modal opens (only if lat/lng are missing)
     useEffect(() => {
-        if (!selectedLead || !selectedLead.address) return;
+        if (!selectedLead) return;
+
+        // Reset states when opening a new lead
+        setActiveTab('details');
+        setChatMessages([{ role: 'assistant', content: `Olá! Sou seu assistente de IA. Como posso ajudar a fechar com a ${selectedLead.company_name}?` }]);
+
+        if (selectedLead.latitude && selectedLead.longitude) {
+            setMapCenter([selectedLead.latitude, selectedLead.longitude]);
+            setIsGeocoding(false);
+            return;
+        }
+
+        if (!selectedLead.address) {
+            setMapCenter(null);
+            setIsGeocoding(false);
+            return;
+        }
 
         let isMounted = true;
 
@@ -98,7 +165,6 @@ export default function Crm() {
             }
         };
 
-        // Small delay to allow modal animation
         const timeout = setTimeout(geocodeAddress, 300);
         return () => {
             isMounted = false;
@@ -200,9 +266,9 @@ export default function Crm() {
             {/* Modal do Lead */}
             {selectedLead && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col h-[90vh] md:h-[80vh]">
                         {/* Header do Modal */}
-                        <div className="flex items-start justify-between p-6 border-b border-slate-100">
+                        <div className="flex items-start justify-between p-6 border-b border-slate-100 shrink-0">
                             <div>
                                 <div className="flex items-center gap-2 mb-2">
                                     <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
@@ -227,85 +293,168 @@ export default function Crm() {
                             </button>
                         </div>
 
-                        {/* Corpo do Modal */}
-                        <div className="p-6 overflow-y-auto">
-                            <div className="grid grid-cols-2 gap-6 mb-8">
-                                <div className="space-y-4">
-                                    <div>
-                                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Qualificação IA</p>
-                                        <div className="flex items-center gap-2 text-orange-600 font-bold text-lg">
-                                            <Flame className="w-5 h-5" />
-                                            Score: {selectedLead.ai_score}%
-                                        </div>
+                        {/* Corpo do Modal - Grid 2 colunas no LG */}
+                        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+
+                            {/* MENU TABS MOBILE/TABLET */}
+                            <div className="lg:hidden flex border-b border-slate-200 shrink-0">
+                                <button
+                                    onClick={() => setActiveTab('details')}
+                                    className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'details' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:bg-slate-50'}`}
+                                >
+                                    Detalhes da Empresa
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('chat')}
+                                    className={`flex-1 py-3 text-sm font-bold border-b-2 transition-colors flex items-center justify-center gap-2 ${activeTab === 'chat' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:bg-slate-50'}`}
+                                >
+                                    <Flame className="w-4 h-4" /> Assistente IA
+                                </button>
+                            </div>
+
+                            {/* PAINEL ESQUERDO: DETALHES DA EMPRESA (Sempre visível no Desktop) */}
+                            <div className={`${activeTab === 'details' ? 'block' : 'hidden'} lg:block lg:w-1/2 p-6 overflow-y-auto border-r border-slate-100`}>
+
+                                {/* SCORE IA EM DESTAQUE */}
+                                <div className="mb-8 bg-gradient-to-br from-orange-50 to-orange-100/50 rounded-2xl p-6 border border-orange-200/50 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                                        <Flame className="w-24 h-24 text-orange-600 rotate-12" />
                                     </div>
+                                    <p className="text-xs font-bold text-orange-600/80 uppercase tracking-wider mb-2">Qualificação IA</p>
+                                    <div className="flex items-end gap-3 mb-4">
+                                        <span className="text-5xl font-black text-orange-600 tracking-tighter leading-none">{selectedLead.ai_score}</span>
+                                        <span className="text-xl font-bold text-orange-600/50 mb-1">/ 100</span>
+                                    </div>
+                                    {selectedLead.ai_reason && (
+                                        <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 shadow-sm border border-orange-100">
+                                            <p className="text-sm font-medium text-slate-700 leading-relaxed italic relative">
+                                                <span className="absolute -left-2 -top-2 text-2xl text-orange-300">"</span>
+                                                {selectedLead.ai_reason}
+                                                <span className="absolute -bottom-4 text-2xl text-orange-300">"</span>
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-6 mb-8">
+                                    {(selectedLead.whatsapp_phone || selectedLead.phone) && (
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Telefone / WhatsApp</p>
+                                            <p className="text-sm font-medium text-slate-800">{selectedLead.whatsapp_phone || selectedLead.phone}</p>
+                                        </div>
+                                    )}
+                                    {selectedLead.website && (
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Website</p>
+                                            <a href={selectedLead.website.startsWith('http') ? selectedLead.website : `https://${selectedLead.website}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:underline line-clamp-1">
+                                                {selectedLead.website}
+                                            </a>
+                                        </div>
+                                    )}
+                                    {selectedLead.reviews_count !== undefined && (
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Avaliações (Google)</p>
+                                            <p className="text-sm font-medium text-slate-800">{selectedLead.reviews_count} reviews</p>
+                                        </div>
+                                    )}
                                     {selectedLead.niche && (
                                         <div>
-                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Nicho de Mercado</p>
+                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Nicho</p>
                                             <p className="text-sm text-slate-800 font-medium">{selectedLead.niche}</p>
                                         </div>
                                     )}
                                 </div>
-                                <div className="space-y-4">
-                                    <div>
-                                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Endereço Mapeado</p>
-                                        <p className="text-sm text-slate-800 flex items-start gap-2">
-                                            <MapPinIcon className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                                            {selectedLead.address || selectedLead.region || 'Endereço não informado'}
-                                        </p>
+
+                                <div>
+                                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Endereço Mapeado</p>
+                                    <p className="text-sm text-slate-800 flex items-start gap-2 mb-4">
+                                        <MapPinIcon className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                                        {selectedLead.address || selectedLead.region || 'Endereço não informado'}
+                                    </p>
+                                </div>
+
+                                {/* Área do Mapa do Modal */}
+                                <div className="border border-slate-200 rounded-xl overflow-hidden relative">
+                                    <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+                                        <h3 className="text-xs font-bold text-slate-600 flex items-center gap-1 uppercase tracking-wider">
+                                            <MapPinIcon className="w-3 h-3 text-slate-400" />
+                                            Localização
+                                        </h3>
                                     </div>
-                                    {selectedLead.whatsapp_phone && (
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Contato Direct</p>
-                                            <p className="text-sm font-medium text-slate-800">{selectedLead.whatsapp_phone}</p>
-                                        </div>
-                                    )}
+
+                                    <div className="h-48 w-full relative bg-slate-100 flex items-center justify-center">
+                                        {isGeocoding ? (
+                                            <div className="flex flex-col items-center text-slate-500">
+                                                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
+                                                <p className="text-xs font-medium">Satélite focando no alvo...</p>
+                                            </div>
+                                        ) : mapCenter ? (
+                                            <MapContainer
+                                                center={mapCenter}
+                                                zoom={15}
+                                                className="h-full w-full z-0"
+                                                zoomControl={false}
+                                            >
+                                                <TileLayer
+                                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                                />
+                                                <Marker position={mapCenter} />
+                                                <MapUpdater center={mapCenter} />
+                                            </MapContainer>
+                                        ) : (
+                                            <div className="text-slate-400 text-xs flex flex-col items-center">
+                                                <MapPinIcon className="w-6 h-6 mb-2 opacity-30" />
+                                                <p>As coordenadas exatas não puderam ser extraídas.</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
-                            {selectedLead.ai_summary && (
-                                <div className="mb-8 bg-slate-50 border border-slate-100 rounded-xl p-4">
-                                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Resumo da Inteligência</p>
-                                    <p className="text-sm text-slate-700 leading-relaxed italic">"{selectedLead.ai_summary}"</p>
-                                </div>
-                            )}
-
-                            {/* Área do Mapa do Modal */}
-                            <div className="mt-4 border border-slate-200 rounded-xl overflow-hidden relative">
-                                <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
-                                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                        <MapPinIcon className="w-4 h-4 text-slate-500" />
-                                        Localização Geográfica
-                                    </h3>
+                            {/* PAINEL DIREITO: ASSISTENTE IA (Sempre visível no Desktop) */}
+                            <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex lg:w-1/2 flex-col bg-slate-50 relative`}>
+                                <div className="hidden lg:flex items-center gap-2 p-4 bg-white border-b border-slate-100 shrink-0">
+                                    <Flame className="w-5 h-5 text-orange-600" />
+                                    <h3 className="font-bold text-slate-800">Assistente IA</h3>
                                 </div>
 
-                                <div className="h-64 w-full relative bg-slate-100 flex items-center justify-center">
-                                    {isGeocoding ? (
-                                        <div className="flex flex-col items-center text-slate-500">
-                                            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-                                            <p className="text-sm font-medium">Satélite focando no alvo...</p>
+                                {/* Messages Area */}
+                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                    {chatMessages.map((msg, idx) => (
+                                        <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                            <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${msg.role === 'user'
+                                                ? 'bg-blue-600 text-white rounded-tr-sm'
+                                                : 'bg-white text-slate-800 border border-slate-200 rounded-tl-sm'
+                                                }`}>
+                                                {msg.content}
+                                            </div>
                                         </div>
-                                    ) : mapCenter ? (
-                                        <MapContainer
-                                            center={mapCenter}
-                                            zoom={15}
-                                            className="h-full w-full z-0"
-                                            zoomControl={true}
+                                    ))}
+                                </div>
+
+                                {/* Input Area */}
+                                <div className="p-4 bg-white border-t border-slate-200 shrink-0">
+                                    <form onSubmit={handleSendMessage} className="relative">
+                                        <input
+                                            type="text"
+                                            value={chatInput}
+                                            onChange={(e) => setChatInput(e.target.value)}
+                                            placeholder="Pergunte à IA sobre este lead..."
+                                            className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 transition-all placeholder:text-slate-400"
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={!chatInput.trim()}
+                                            className="absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
                                         >
-                                            <TileLayer
-                                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                            />
-                                            <Marker position={mapCenter} />
-                                            <MapUpdater center={mapCenter} />
-                                        </MapContainer>
-                                    ) : (
-                                        <div className="text-slate-400 text-sm flex flex-col items-center">
-                                            <MapPinIcon className="w-8 h-8 mb-2 opacity-30" />
-                                            <p>As coordenadas exatas não puderam ser extraídas.</p>
-                                        </div>
-                                    )}
+                                            <Zap className="w-4 h-4" />
+                                        </button>
+                                    </form>
+                                    <p className="text-[10px] text-center text-slate-400 mt-2">IA pode cometer erros. Considere verificar as informações importantes.</p>
                                 </div>
                             </div>
+
                         </div>
                     </div>
                 </div>
