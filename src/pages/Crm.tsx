@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Globe, Flame, X, MapPin as MapPinIcon, Building2, Zap, Trash2, Loader2, Plus } from 'lucide-react';
+import { Globe, Flame, X, MapPin as MapPinIcon, Building2, Zap, Trash2, Loader2, Plus, MessageCircle } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import toast from 'react-hot-toast';
 import L from 'leaflet';
@@ -639,10 +639,33 @@ export default function Crm() {
 
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-6 mb-8">
                                     {(selectedLead.whatsapp_phone || selectedLead.phone) && (
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Telefone / WhatsApp</p>
-                                            <p className="text-sm font-medium text-slate-800">{selectedLead.whatsapp_phone || selectedLead.phone}</p>
-                                        </div>
+                                        (() => {
+                                            const rawPhone = selectedLead.whatsapp_phone || selectedLead.phone;
+                                            if (!rawPhone) return null;
+
+                                            // Função para limpar número: remove tudo que não for dígito
+                                            const cleanPhone = rawPhone.replace(/\D/g, '');
+
+                                            // Mensagem quebra-gelo dinâmica
+                                            const icebreaker = `Olá! Vi o perfil da empresa ${selectedLead.company_name} no Google e achei o trabalho de vocês muito interessante. Podemos conversar?`;
+                                            const encodedMessage = encodeURIComponent(icebreaker);
+                                            const waLink = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
+
+                                            return (
+                                                <div>
+                                                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Telefone / WhatsApp</p>
+                                                    <a
+                                                        href={waLink}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center gap-2 mt-1 px-3 py-1.5 bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800 border border-green-200 rounded-lg text-sm font-bold transition-colors w-max"
+                                                    >
+                                                        <MessageCircle className="w-4 h-4" />
+                                                        {rawPhone}
+                                                    </a>
+                                                </div>
+                                            );
+                                        })()
                                     )}
                                     {selectedLead.website && (
                                         <div>
