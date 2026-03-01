@@ -9,10 +9,12 @@ import Wallet from './pages/Wallet';
 import Profile from './pages/Profile';
 
 import Crm from './pages/Crm';
+import { Toaster } from 'react-hot-toast';
 
 function App() {
   return (
     <AuthProvider>
+      <Toaster position="top-right" />
       <BrowserRouter>
         <Routes>
           {/* Public Route */}

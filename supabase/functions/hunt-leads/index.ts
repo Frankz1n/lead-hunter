@@ -14,7 +14,11 @@ serve(async (req) => {
 
     try {
         const body = await req.json()
-        const { leadVolume, region, keywords } = body
+        const { leadVolume, region, keywords, isPremium, noWebsiteOnly } = body
+
+        // Custos
+        const costPerLead = isPremium ? 3 : 1
+        const totalCost = leadVolume * costPerLead
 
         const authHeader = req.headers.get('Authorization')
         if (!authHeader) {
@@ -52,8 +56,8 @@ serve(async (req) => {
         }
 
         // Verifica se tem saldo suficiente
-        if (userData.credits_balance < leadVolume) {
-            return new Response(JSON.stringify({ error: 'Saldo insuficiente. Recarregue sua carteira.' }), {
+        if (userData.credits_balance < totalCost) {
+            return new Response(JSON.stringify({ error: `Saldo insuficiente. Esta busca custa ${totalCost} créditos.` }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
                 status: 400,
             })
@@ -62,39 +66,84 @@ serve(async (req) => {
         // Desconta o saldo do usuário
         const { error: updateError } = await supabaseClient
             .from('users')
-            .update({ credits_balance: userData.credits_balance - leadVolume })
+            .update({ credits_balance: userData.credits_balance - totalCost })
             .eq('id', user.id)
 
         if (updateError) throw new Error(`Erro ao descontar saldo: ${updateError.message}`)
 
         // Registra a transação de débito na carteira
+        const searchTypeDesc = isPremium ? 'Premium (com IA)' : 'Padrão'
         const { error: txError } = await supabaseClient
             .from('wallet_transactions')
             .insert({
                 user_id: user.id,
-                amount: -leadVolume,
+                amount: -totalCost,
                 transaction_type: 'debit',
-                description: `Varredura tática: ${region} - ${leadVolume} leads`
+                description: `Varredura ${searchTypeDesc}: ${region} - ${leadVolume} leads`
             })
 
         if (txError) throw new Error(`Erro ao registrar transação: ${txError.message}`)
 
-        // Insere Leads Falsos (Mockados) no CRM
-        const mockLeads = Array.from({ length: leadVolume }).map((_, i) => ({
-            user_id: user.id,
-            company_name: `Empresa Mockada ${i + 1}`,
-            address: region,
-            no_website: Math.random() > 0.5,
-            ai_score: Math.floor(Math.random() * (99 - 70 + 1) + 70),
-            status: 'Novos Leads'
-        }))
+        // Prepara a chamada para o Apify
+        const apifyToken = Deno.env.get('APIFY_API_TOKEN')
+        if (!apifyToken) {
+            throw new Error("APIFY_API_TOKEN não está configurado.")
+        }
 
-        const { error: leadsError } = await supabaseClient.from('leads').insert(mockLeads)
+        const projectUrl = Deno.env.get('SUPABASE_URL')
+        if (!projectUrl) {
+            throw new Error("SUPABASE_URL não está configurada.")
+        }
 
-        if (leadsError) throw new Error(`Erro ao inserir leads: ${leadsError.message}`)
+        const projectId = projectUrl.match(/https:\/\/(.*?)\.supabase\.co/)?.[1]
 
-        // Tudo deu certo! Retorna sucesso.
-        return new Response(JSON.stringify({ success: true, message: 'Varredura concluída com sucesso!' }), {
+        if (!projectId) {
+            throw new Error("Não foi possível identificar o Project ID da URL do Supabase.")
+        }
+
+        const webhookUrl = `https://${projectId}.supabase.co/functions/v1/apify-webhook?user_id=${user.id}&keyword=${encodeURIComponent(keywords)}&region=${encodeURIComponent(region)}`
+
+        const apifyPayload: any = {
+            searchStringsArray: [keywords],
+            locationQuery: region,
+            maxCrawledPlacesPerSearch: leadVolume,
+            language: "pt-BR",
+        }
+
+        if (noWebsiteOnly) {
+            apifyPayload.hasWebsite = false;
+        }
+
+        // 1. Monta o array de webhooks
+        const webhooksArray = [
+            {
+                eventTypes: ["ACTOR.RUN.SUCCEEDED"],
+                requestUrl: webhookUrl
+            }
+        ];
+
+        // 2. Converte para Base64 para blindar contra corrupção na URL
+        const webhooksBase64 = btoa(JSON.stringify(webhooksArray));
+
+        // 3. Chama a API do Apify passando o Base64 na URL, e deixa no body APENAS os dados da busca
+        const apifyUrl = `https://api.apify.com/v2/acts/compass~crawler-google-places/runs?webhooks=${webhooksBase64}`;
+
+        const apifyResponse = await fetch(apifyUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apifyToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(apifyPayload)
+        })
+
+        if (!apifyResponse.ok) {
+            const errorText = await apifyResponse.text()
+            throw new Error(`Falha ao iniciar extração no Apify: ${apifyResponse.status} - ${errorText}`)
+        }
+
+        // Tudo deu certo! Retorna sucesso imediatamente para o front.
+        return new Response(JSON.stringify({ success: true, message: 'Varredura iniciada!' }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 200,
         })

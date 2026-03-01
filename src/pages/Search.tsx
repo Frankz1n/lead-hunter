@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Target, MapPin, Zap, Settings2, Loader2 } from 'lucide-react';
 import { MapContainer, TileLayer, Circle, useMap } from 'react-leaflet';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import toast from 'react-hot-toast';
 import 'leaflet/dist/leaflet.css';
 
 // Componente para atualizar o centro do mapa dinamicamente
@@ -30,7 +30,6 @@ export default function Search() {
 
     const [isScanning, setIsScanning] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const navigate = useNavigate();
 
     // Efeito para Geocoding Gratuito usando Nominatim API
     useEffect(() => {
@@ -53,6 +52,12 @@ export default function Search() {
 
     const handleHunt = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (!targetRegion.trim() || !keywords.trim()) {
+            setErrorMessage('Por favor, defina a Região Alvo e o Nicho no mapa antes de disparar.');
+            return;
+        }
+
         setIsScanning(true);
         setErrorMessage(null);
 
@@ -74,7 +79,7 @@ export default function Search() {
                     leadVolume: Number(leadVolume),
                     region: targetRegion,
                     keywords,
-                    requireNoWebsite,
+                    noWebsiteOnly: requireNoWebsite,
                     requirePhone,
                     ignoreFranchises,
                     aiPrompt
@@ -88,8 +93,20 @@ export default function Search() {
                 throw new Error(data.error);
             }
 
-            // Sucesso! Redirecionar para o CRM/Dashboard
-            navigate('/crm');
+            // Sucesso! Mostrar toast e não redirecionar
+            toast.success('🚀 Radares ativados! Buscando os melhores leads. Eles aparecerão no Kanban em breve', {
+                duration: 5000,
+                style: {
+                    border: '1px solid #E2E8F0',
+                    padding: '16px',
+                    color: '#0F172A',
+                    fontWeight: 500,
+                },
+                iconTheme: {
+                    primary: '#2563EB',
+                    secondary: '#EFF6FF',
+                },
+            });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Erro desconhecido ao disparar a varredura. Verifique seu saldo de créditos.';
             setErrorMessage(message);
