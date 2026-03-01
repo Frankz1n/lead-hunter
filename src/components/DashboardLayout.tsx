@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LayoutDashboard, Search, LogOut, User, Wallet as WalletIcon } from 'lucide-react';
+import { LayoutDashboard, Search, LogOut, User, Wallet as WalletIcon, Menu, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export default function DashboardLayout() {
     const { signOut, user } = useAuth();
     const navigate = useNavigate();
     const [balance, setBalance] = useState<number | null>(null);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 768); // Open by default on desktop
 
     useEffect(() => {
         const fetchBalance = async () => {
@@ -60,14 +61,28 @@ export default function DashboardLayout() {
     }, [user]);
 
     return (
-        <div className="flex h-screen bg-slate-50 font-sans">
+        <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
+            {/* Sidebar Overlay for Mobile */}
+            {isSidebarOpen && (
+                <div
+                    className="fixed inset-0 bg-slate-900/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
+                    onClick={() => setIsSidebarOpen(false)}
+                />
+            )}
+
             {/* Sidebar */}
-            <aside className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex">
-                <div className="p-6">
+            <aside className={`fixed md:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:hidden'}`}>
+                <div className="p-6 flex items-center justify-between">
                     <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
                         <Search className="w-6 h-6 text-blue-600 bg-blue-100 p-1 rounded-lg" />
                         LeadHunter
                     </h2>
+                    <button
+                        className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                        onClick={() => setIsSidebarOpen(false)}
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
                 </div>
 
                 <nav className="flex-1 px-4 space-y-2 mt-4">
@@ -123,16 +138,27 @@ export default function DashboardLayout() {
             </aside>
 
             {/* Main Content Area */}
-            <main className="flex-1 flex flex-col overflow-hidden">
+            <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 {/* Header (Desktop + Mobile) */}
-                <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-8">
-                    {/* Mobile Branding (Hidden on desktop) */}
-                    <div className="flex items-center gap-2 md:hidden">
-                        <Search className="w-5 h-5 text-blue-600 bg-blue-100 p-0.5 rounded-md" />
-                        <span className="font-bold text-slate-900">LeadHunter</span>
+                <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-8 shrink-0">
+                    <div className="flex items-center gap-3">
+                        {/* Toggle Sidebar Button */}
+                        <button
+                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                            className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            title="Alternar Menu"
+                        >
+                            <Menu className="w-6 h-6" />
+                        </button>
+
+                        {/* Mobile Branding (Hidden on desktop, and hidden when menu is open on mobile) */}
+                        <div className={`flex items-center gap-2 md:hidden ${isSidebarOpen ? 'hidden' : 'flex'}`}>
+                            <Search className="w-5 h-5 text-blue-600 bg-blue-100 p-0.5 rounded-md" />
+                            <span className="font-bold text-slate-900 leading-none mt-0.5">LeadHunter</span>
+                        </div>
                     </div>
 
-                    <div className="hidden md:block">{/* Spacer left on desktop */}</div>
+                    <div className="hidden md:block flex-1">{/* Spacer left on desktop */}</div>
 
                     {/* User Profile / Carteira (Right Side) */}
                     <div className="flex items-center gap-4">
@@ -144,7 +170,7 @@ export default function DashboardLayout() {
                         </div>
                         <div
                             onClick={() => navigate('/profile')}
-                            className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 border border-slate-200 cursor-pointer hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all"
+                            className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-600 border border-slate-200 cursor-pointer hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all shrink-0"
                             title="Meu Perfil"
                         >
                             <User className="w-5 h-5" />

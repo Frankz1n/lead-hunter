@@ -33,6 +33,10 @@ interface PlaceData {
     street?: string;
     reviewsCount?: number;
     location?: { lat: number, lng: number };
+    imageUrl?: string;
+    totalScore?: number;
+    categoryName?: string;
+    neighborhood?: string;
 }
 
 interface LeadInsert {
@@ -48,6 +52,10 @@ interface LeadInsert {
     ai_score: number;
     ai_reason: string;
     status: string;
+    image_url: string | null;
+    google_score: number | null;
+    category_name: string | null;
+    neighborhood: string | null;
 }
 
 serve(async (req) => {
@@ -110,6 +118,10 @@ serve(async (req) => {
             const reviewsCount = item.reviewsCount || 0
             const lat = item.location?.lat || null
             const lng = item.location?.lng || null
+            const imageUrl = item.imageUrl || null
+            const googleScore = item.totalScore || null
+            const categoryName = item.categoryName || null
+            const neighborhood = item.neighborhood || null
 
             const promptData = { nome, telefone, site: siteUrl, endereco, reviewsCount }
 
@@ -169,7 +181,11 @@ serve(async (req) => {
                 longitude: lng,
                 ai_score: ai_score,
                 ai_reason: ai_reason,
-                status: 'Novos Leads' // Status padrão do pipeline Kanban
+                status: 'Novos Leads', // Status padrão do pipeline Kanban
+                image_url: imageUrl,
+                google_score: googleScore,
+                category_name: categoryName,
+                neighborhood: neighborhood
             })
         }
 

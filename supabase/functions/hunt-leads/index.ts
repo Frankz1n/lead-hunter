@@ -14,7 +14,7 @@ serve(async (req) => {
 
     try {
         const body = await req.json()
-        const { leadVolume, region, keywords, isPremium } = body
+        const { leadVolume, region, keywords, isPremium, noWebsiteOnly } = body
 
         // Custos
         const costPerLead = isPremium ? 3 : 1
@@ -103,11 +103,15 @@ serve(async (req) => {
 
         const webhookUrl = `https://${projectId}.supabase.co/functions/v1/apify-webhook?user_id=${user.id}&keyword=${encodeURIComponent(keywords)}&region=${encodeURIComponent(region)}`
 
-        const apifyPayload = {
+        const apifyPayload: any = {
             searchStringsArray: [keywords],
             locationQuery: region,
             maxCrawledPlacesPerSearch: leadVolume,
             language: "pt-BR",
+        }
+
+        if (noWebsiteOnly) {
+            apifyPayload.hasWebsite = false;
         }
 
         // 1. Monta o array de webhooks

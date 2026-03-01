@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Target, MapPin, Zap, Settings2, Loader2 } from 'lucide-react';
 import { MapContainer, TileLayer, Circle, useMap } from 'react-leaflet';
 import { supabase } from '../lib/supabase';
+import toast from 'react-hot-toast';
 import 'leaflet/dist/leaflet.css';
 
 // Componente para atualizar o centro do mapa dinamicamente
@@ -29,7 +30,6 @@ export default function Search() {
 
     const [isScanning, setIsScanning] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
-    const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
     // Efeito para Geocoding Gratuito usando Nominatim API
     useEffect(() => {
@@ -60,7 +60,6 @@ export default function Search() {
 
         setIsScanning(true);
         setErrorMessage(null);
-        setSuccessMessage(null);
 
         try {
             const { data: { session } } = await supabase.auth.getSession();
@@ -80,7 +79,7 @@ export default function Search() {
                     leadVolume: Number(leadVolume),
                     region: targetRegion,
                     keywords,
-                    requireNoWebsite,
+                    noWebsiteOnly: requireNoWebsite,
                     requirePhone,
                     ignoreFranchises,
                     aiPrompt
@@ -95,7 +94,19 @@ export default function Search() {
             }
 
             // Sucesso! Mostrar toast e não redirecionar
-            setSuccessMessage('🕵️‍♂️ Snipers em campo! A varredura começou. Os leads aparecerão no Kanban assim que a IA terminar a análise.');
+            toast.success('🚀 Radares ativados! Buscando os melhores leads. Eles aparecerão no Kanban em breve', {
+                duration: 5000,
+                style: {
+                    border: '1px solid #E2E8F0',
+                    padding: '16px',
+                    color: '#0F172A',
+                    fontWeight: 500,
+                },
+                iconTheme: {
+                    primary: '#2563EB',
+                    secondary: '#EFF6FF',
+                },
+            });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Erro desconhecido ao disparar a varredura. Verifique seu saldo de créditos.';
             setErrorMessage(message);
@@ -147,11 +158,6 @@ export default function Search() {
                         {errorMessage && (
                             <div className="p-4 rounded-lg bg-red-50 border border-red-100 text-red-600 text-sm">
                                 {errorMessage}
-                            </div>
-                        )}
-                        {successMessage && (
-                            <div className="p-4 rounded-lg bg-green-50 border border-green-100 text-green-700 text-sm flex gap-2 items-start">
-                                {successMessage}
                             </div>
                         )}
                         <div>
