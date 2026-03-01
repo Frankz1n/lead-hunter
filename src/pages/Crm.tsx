@@ -52,6 +52,7 @@ export interface Lead {
     image_url?: string;
     category_name?: string;
     neighborhood?: string;
+    chat_history?: { role: 'user' | 'assistant' | 'system', content: string }[];
 }
 
 export interface Column {
@@ -229,7 +230,27 @@ export default function Crm() {
             if (error) throw error;
 
             if (data && data.reply) {
-                setChatMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
+                const newAssistantMessage = { role: 'assistant' as const, content: data.reply };
+                const finalMessages = [...updatedMessages, newAssistantMessage];
+
+                setChatMessages(finalMessages);
+
+                // Salvar o histórico completo no Supabase
+                const { error: updateError } = await supabase
+                    .from('leads')
+                    .update({ chat_history: finalMessages })
+                    .eq('id', selectedLead.id);
+
+                if (updateError) {
+                    console.error('Erro ao salvar histórico do chat:', updateError);
+                } else {
+                    // Atualiza o cache local para não perder o estado se fechar/abrir o modal sem refresh
+                    setLeads(currentLeads =>
+                        currentLeads.map(l => l.id === selectedLead.id ? { ...l, chat_history: finalMessages } : l)
+                    );
+                    setSelectedLead(prev => prev ? { ...prev, chat_history: finalMessages } : null);
+                }
+
             } else {
                 setChatMessages(prev => [...prev, { role: 'assistant', content: 'Desculpe, não consegui obter uma resposta.' }]);
             }
@@ -243,13 +264,19 @@ export default function Crm() {
         }
     };
 
-    // Effect to geocode address when modal opens (only if lat/lng are missing)
+    // Effect to geocode address & load chat history when modal opens
     useEffect(() => {
         if (!selectedLead) return;
 
         // Reset states when opening a new lead
         setActiveTab('details');
-        setChatMessages([{ role: 'assistant', content: `Olá! Sou seu assistente de IA. Como posso ajudar a fechar com a ${selectedLead.company_name}?` }]);
+
+        // Carrega o histórico do banco ou inicia com saudação padrão
+        if (selectedLead.chat_history && selectedLead.chat_history.length > 0) {
+            setChatMessages(selectedLead.chat_history as { role: 'user' | 'assistant', content: string }[]);
+        } else {
+            setChatMessages([{ role: 'assistant', content: `Olá! Sou seu assistente de IA. Como posso ajudar a fechar com a ${selectedLead.company_name}?` }]);
+        }
 
         if (selectedLead.latitude && selectedLead.longitude) {
             setMapCenter([selectedLead.latitude, selectedLead.longitude]);
