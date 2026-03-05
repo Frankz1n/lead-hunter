@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Globe, Flame, X, MapPin as MapPinIcon, Building2, Zap, Trash2, Loader2, Plus, MessageCircle } from 'lucide-react';
+import { Globe, Flame, X, MapPin as MapPinIcon, Building2, Zap, Trash2, Loader2, Plus, MessageCircle, ChevronLeft, ChevronRight, FileText, UploadCloud } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import toast from 'react-hot-toast';
 import L from 'leaflet';
@@ -54,6 +54,17 @@ export interface Lead {
     category_name?: string;
     neighborhood?: string;
     chat_history?: { role: 'user' | 'assistant' | 'system', content: string }[];
+    has_maintenance?: boolean;
+    final_value?: number;
+    contract_url?: string;
+    google_score?: number;
+}
+
+export interface LeadComment {
+    id: string;
+    lead_id: string;
+    content: string;
+    created_at: string;
 }
 
 export interface Column {
@@ -90,6 +101,13 @@ export default function Crm() {
     const [mapCenter, setMapCenter] = useState<[number, number] | null>(null);
     const [isGeocoding, setIsGeocoding] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+
+    // New Features States
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [comments, setComments] = useState<LeadComment[]>([]);
+    const [newComment, setNewComment] = useState('');
+    const [isSavingComment, setIsSavingComment] = useState(false);
+    const [isUploadingContract, setIsUploadingContract] = useState(false);
 
     const handleDeleteLead = async () => {
         if (!selectedLead) return;
@@ -279,6 +297,12 @@ export default function Crm() {
             setChatMessages([{ role: 'assistant', content: `Olá! Sou seu assistente de IA. Como posso ajudar a fechar com a ${selectedLead.company_name}?` }]);
         }
 
+        const fetchComments = async () => {
+            const { data } = await supabase.from('lead_comments').select('*').eq('lead_id', selectedLead.id).order('created_at', { ascending: false });
+            if (data) setComments(data);
+        };
+        fetchComments();
+
         if (selectedLead.latitude && selectedLead.longitude) {
             setMapCenter([selectedLead.latitude, selectedLead.longitude]);
             setIsGeocoding(false);
@@ -317,6 +341,84 @@ export default function Crm() {
             clearTimeout(timeout);
         };
     }, [selectedLead]);
+
+    // --- NEW FIELD HANDLERS ---
+    const handleToggleMaintenance = async () => {
+        if (!selectedLead) return;
+        const newValue = !selectedLead.has_maintenance;
+
+        setLeads(leads.map(l => l.id === selectedLead.id ? { ...l, has_maintenance: newValue } : l));
+        setSelectedLead({ ...selectedLead, has_maintenance: newValue });
+
+        const { error } = await supabase.from('leads').update({ has_maintenance: newValue }).eq('id', selectedLead.id);
+        if (error) {
+            toast.error('Erro ao atualizar manutenção.');
+            setLeads(leads.map(l => l.id === selectedLead.id ? { ...l, has_maintenance: !newValue } : l));
+            setSelectedLead({ ...selectedLead, has_maintenance: !newValue });
+        }
+    };
+
+    const handleValueChange = async (e: React.FocusEvent<HTMLInputElement>) => {
+        if (!selectedLead) return;
+        const val = parseFloat(e.target.value);
+        if (isNaN(val)) return;
+
+        setLeads(leads.map(l => l.id === selectedLead.id ? { ...l, final_value: val } : l));
+        setSelectedLead({ ...selectedLead, final_value: val });
+        await supabase.from('leads').update({ final_value: val }).eq('id', selectedLead.id);
+        toast.success('Valor salvo.');
+    };
+
+    const handleUploadContract = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0 || !selectedLead) return;
+        const file = e.target.files[0];
+        if (file.type !== 'application/pdf') {
+            toast.error('Apenas arquivos PDF são permitidos.');
+            return;
+        }
+
+        setIsUploadingContract(true);
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${selectedLead.id}-${Math.random()}.${fileExt}`;
+
+        try {
+            const { error: uploadError } = await supabase.storage.from('contracts').upload(fileName, file);
+            if (uploadError) throw uploadError;
+
+            const { data: { publicUrl } } = supabase.storage.from('contracts').getPublicUrl(fileName);
+
+            await supabase.from('leads').update({ contract_url: publicUrl }).eq('id', selectedLead.id);
+            setLeads(leads.map(l => l.id === selectedLead.id ? { ...l, contract_url: publicUrl } : l));
+            setSelectedLead({ ...selectedLead, contract_url: publicUrl });
+            toast.success('Contrato anexado com sucesso!');
+        } catch (error) {
+            console.error('Erro upload:', error);
+            toast.error('Erro ao fazer upload do contrato.');
+        } finally {
+            setIsUploadingContract(false);
+        }
+    };
+
+    const handleAddComment = async () => {
+        if (!selectedLead || !newComment.trim()) return;
+        setIsSavingComment(true);
+        try {
+            const { data, error } = await supabase.from('lead_comments').insert({
+                lead_id: selectedLead.id,
+                content: newComment.trim()
+            }).select().single();
+
+            if (error) throw error;
+            setComments([data, ...comments]);
+            setNewComment('');
+            toast.success('Comentário adicionado!');
+        } catch (error) {
+            console.error('Erro comment:', error);
+            toast.error('Erro ao salvar comentário.');
+        } finally {
+            setIsSavingComment(false);
+        }
+    };
 
     // --- DND KIT SENSORS & HANDLERS ---
     const sensors = useSensors(
@@ -677,7 +779,7 @@ export default function Crm() {
                             </div>
 
                             {/* PAINEL ESQUERDO: DETALHES DA EMPRESA (Sempre visível no Desktop) */}
-                            <div className={`${activeTab === 'details' ? 'block' : 'hidden'} lg:block lg:w-1/2 h-full p-6 overflow-y-auto border-r border-slate-100`}>
+                            <div className={`${activeTab === 'details' ? 'block' : 'hidden'} lg:block flex-1 h-full p-6 overflow-y-auto border-r border-slate-100`}>
 
                                 {/* SCORE IA EM DESTAQUE */}
                                 <div className="mb-8 bg-gradient-to-br from-orange-50 to-orange-100/50 rounded-2xl p-6 border border-orange-200/50 relative overflow-hidden">
@@ -767,6 +869,58 @@ export default function Crm() {
                                     </p>
                                 </div>
 
+                                {/* Novos Campos: Manutenção, Valor, Contrato */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                                    {/* Has Maintenance */}
+                                    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between">
+                                        <div>
+                                            <p className="text-sm font-bold text-slate-800">Manutenção</p>
+                                            <p className="text-xs text-slate-500">Contrato ativo?</p>
+                                        </div>
+                                        <button
+                                            onClick={handleToggleMaintenance}
+                                            className={`w-12 h-6 rounded-full transition-colors relative ${selectedLead.has_maintenance ? 'bg-blue-600' : 'bg-slate-200'}`}
+                                        >
+                                            <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-transform ${selectedLead.has_maintenance ? 'translate-x-7' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+
+                                    {/* Final Value */}
+                                    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                                        <p className="text-sm font-bold text-slate-800 mb-2">Valor Final (R$)</p>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            defaultValue={selectedLead.final_value || ''}
+                                            onBlur={handleValueChange}
+                                            placeholder="Ex: 1500.00"
+                                            className="w-full text-sm p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500"
+                                        />
+                                    </div>
+
+                                    {/* Contract URL */}
+                                    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col justify-between">
+                                        <p className="text-sm font-bold text-slate-800 mb-2">Contrato (PDF)</p>
+                                        {selectedLead.contract_url ? (
+                                            <div className="flex items-center gap-2">
+                                                <a href={selectedLead.contract_url} target="_blank" rel="noopener noreferrer" className="flex-1 bg-green-50 text-green-700 border border-green-200 rounded-lg px-2 py-2 text-xs font-bold flex items-center justify-center gap-1 hover:bg-green-100 transition-colors">
+                                                    <FileText className="w-4 h-4" /> Ver PDF
+                                                </a>
+                                                <label className="cursor-pointer bg-slate-100 p-2 rounded-lg border border-slate-200 hover:bg-slate-200 transition-colors" title="Substituir PDF">
+                                                    <UploadCloud className="w-4 h-4 text-slate-600" />
+                                                    <input type="file" accept="application/pdf" className="hidden" onChange={handleUploadContract} />
+                                                </label>
+                                            </div>
+                                        ) : (
+                                            <label className="cursor-pointer flex items-center justify-center gap-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg px-3 py-2 text-xs font-bold hover:bg-blue-100 transition-colors">
+                                                {isUploadingContract ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
+                                                {isUploadingContract ? 'Enviando...' : 'Anexar PDF'}
+                                                <input type="file" accept="application/pdf" className="hidden" disabled={isUploadingContract} onChange={handleUploadContract} />
+                                            </label>
+                                        )}
+                                    </div>
+                                </div>
+
                                 {/* Área do Mapa do Modal */}
                                 <div className="border border-slate-200 rounded-xl overflow-hidden relative">
                                     <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
@@ -804,71 +958,128 @@ export default function Crm() {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Comments Section */}
+                                <div className="mt-8 border-t border-slate-200 pt-8">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                        <MessageCircle className="w-5 h-5 text-slate-400" />
+                                        Anotações e Histórico
+                                    </h3>
+
+                                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 mb-6">
+                                        <textarea
+                                            value={newComment}
+                                            onChange={(e) => setNewComment(e.target.value)}
+                                            placeholder="Adicione uma anotação sobre esta negociação..."
+                                            className="w-full text-sm p-3 border border-slate-200 rounded-lg outline-none focus:border-blue-500 min-h-[80px] mb-3 resize-none bg-white"
+                                        />
+                                        <div className="flex justify-end">
+                                            <button
+                                                onClick={handleAddComment}
+                                                disabled={isSavingComment || !newComment.trim()}
+                                                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                                            >
+                                                {isSavingComment && <Loader2 className="w-4 h-4 animate-spin" />}
+                                                Salvar Anotação
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {comments.length === 0 ? (
+                                            <p className="text-sm text-slate-500 text-center py-4">Nenhuma anotação registrada ainda.</p>
+                                        ) : (
+                                            comments.map(comment => (
+                                                <div key={comment.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                                                    <p className="text-xs text-slate-400 mb-2 font-medium">
+                                                        {new Date(comment.created_at).toLocaleString('pt-BR')}
+                                                    </p>
+                                                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{comment.content}</p>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+
                             </div>
 
-                            {/* PAINEL DIREITO: ASSISTENTE IA (Sempre visível no Desktop) */}
-                            <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex lg:w-1/2 h-full flex-col bg-slate-50 relative`}>
-                                <div className="hidden lg:flex items-center gap-2 p-4 bg-white border-b border-slate-100 shrink-0">
-                                    <Flame className="w-5 h-5 text-orange-600" />
-                                    <h3 className="font-bold text-slate-800">Assistente IA</h3>
-                                </div>
+                            {/* PAINEL DIREITO: ASSISTENTE IA (Retrátil no Desktop) */}
+                            <div className={`${activeTab === 'chat' ? 'flex' : 'hidden'} lg:flex h-full flex-col bg-slate-50 transition-all duration-300 relative ${isChatOpen ? 'w-full lg:w-[400px] shrink-0' : 'w-full lg:w-12 shrink-0 cursor-pointer hover:bg-slate-100'} ${!isChatOpen ? 'lg:items-center lg:justify-center' : ''}`} onClick={() => !isChatOpen && setIsChatOpen(true)}>
 
-                                {/* Messages Area */}
-                                <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                                    {chatMessages.map((msg, idx) => (
-                                        <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                            <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${msg.role === 'user'
-                                                ? 'bg-blue-600 text-white rounded-tr-sm'
-                                                : 'bg-white text-slate-800 border border-slate-200 rounded-tl-sm'
-                                                }`}>
-                                                {msg.role === 'user' ? (
-                                                    msg.content
-                                                ) : (
-                                                    <div className="prose prose-sm max-w-none text-current prose-p:leading-relaxed prose-pre:bg-slate-100 prose-pre:text-slate-800 prose-a:text-blue-600 hover:prose-a:text-blue-500 prose-strong:text-current prose-strong:font-bold prose-ul:list-disc prose-ul:pl-4 prose-ol:list-decimal prose-ol:pl-4 prose-li:my-1 space-y-2 break-words">
-                                                        <ReactMarkdown>
-                                                            {msg.content}
-                                                        </ReactMarkdown>
+                                {/* Toggle Button on the edge */}
+                                <button onClick={(e) => { e.stopPropagation(); setIsChatOpen(!isChatOpen); }} className="absolute -left-3.5 top-1/2 -translate-y-1/2 bg-white border border-slate-200 rounded-full p-1.5 shadow-sm text-slate-400 hover:text-blue-600 z-10 hidden lg:flex items-center justify-center">
+                                    {isChatOpen ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+                                </button>
+
+                                {isChatOpen || activeTab === 'chat' ? (
+                                    <>
+                                        <div className="hidden lg:flex items-center gap-2 p-4 bg-white border-b border-slate-100 shrink-0">
+                                            <Flame className="w-5 h-5 text-orange-600" />
+                                            <h3 className="font-bold text-slate-800">Assistente IA</h3>
+                                        </div>
+
+                                        {/* Messages Area */}
+                                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                                            {chatMessages.map((msg, idx) => (
+                                                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${msg.role === 'user'
+                                                        ? 'bg-blue-600 text-white rounded-tr-sm'
+                                                        : 'bg-white text-slate-800 border border-slate-200 rounded-tl-sm'
+                                                        }`}>
+                                                        {msg.role === 'user' ? (
+                                                            msg.content
+                                                        ) : (
+                                                            <div className="prose prose-sm max-w-none text-current prose-p:leading-relaxed prose-pre:bg-slate-100 prose-pre:text-slate-800 prose-a:text-blue-600 hover:prose-a:text-blue-500 prose-strong:text-current prose-strong:font-bold prose-ul:list-disc prose-ul:pl-4 prose-ol:list-decimal prose-ol:pl-4 prose-li:my-1 space-y-2 break-words">
+                                                                <ReactMarkdown>
+                                                                    {msg.content}
+                                                                </ReactMarkdown>
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {isChatLoading && (
-                                        <div className="flex justify-start">
-                                            <div className="bg-white text-slate-500 border border-slate-200 rounded-2xl rounded-tl-sm px-4 py-3 text-sm shadow-sm flex items-center gap-1.5 h-[46px]">
-                                                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '-0.3s' }}></div>
-                                                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '-0.15s' }}></div>
-                                                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Input Area */}
-                                <div className="p-4 bg-white border-t border-slate-200 shrink-0">
-                                    <form onSubmit={handleSendMessage} className="relative">
-                                        <input
-                                            type="text"
-                                            value={chatInput}
-                                            onChange={(e) => setChatInput(e.target.value)}
-                                            placeholder="Pergunte à IA sobre este lead..."
-                                            disabled={isChatLoading}
-                                            className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 transition-all placeholder:text-slate-400 disabled:opacity-50"
-                                        />
-                                        <button
-                                            type="submit"
-                                            disabled={!chatInput.trim() || isChatLoading}
-                                            className="absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
-                                        >
-                                            {isChatLoading ? (
-                                                <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
-                                            ) : (
-                                                <Zap className="w-4 h-4" />
+                                                </div>
+                                            ))}
+                                            {isChatLoading && (
+                                                <div className="flex justify-start">
+                                                    <div className="bg-white text-slate-500 border border-slate-200 rounded-2xl rounded-tl-sm px-4 py-3 text-sm shadow-sm flex items-center gap-1.5 h-[46px]">
+                                                        <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '-0.3s' }}></div>
+                                                        <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '-0.15s' }}></div>
+                                                        <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></div>
+                                                    </div>
+                                                </div>
                                             )}
-                                        </button>
-                                    </form>
-                                    <p className="text-[10px] text-center text-slate-400 mt-2">IA pode cometer erros. Considere verificar as informações importantes.</p>
-                                </div>
+                                        </div>
+
+                                        {/* Input Area */}
+                                        <div className="p-4 bg-white border-t border-slate-200 shrink-0">
+                                            <form onSubmit={handleSendMessage} className="relative">
+                                                <input
+                                                    type="text"
+                                                    value={chatInput}
+                                                    onChange={(e) => setChatInput(e.target.value)}
+                                                    placeholder="Pergunte à IA algo..."
+                                                    disabled={isChatLoading}
+                                                    className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/50 focus:border-blue-600 transition-all placeholder:text-slate-400 disabled:opacity-50"
+                                                />
+                                                <button
+                                                    type="submit"
+                                                    disabled={!chatInput.trim() || isChatLoading}
+                                                    className="absolute right-2 top-2 bottom-2 aspect-square flex items-center justify-center bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
+                                                >
+                                                    {isChatLoading ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                                                    ) : (
+                                                        <Zap className="w-4 h-4" />
+                                                    )}
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="hidden lg:flex flex-col items-center justify-center gap-4 text-slate-400 h-full w-full pointer-events-none">
+                                        <Flame className="w-5 h-5 text-orange-400" />
+                                        <span className="[writing-mode:vertical-lr] rotate-180 font-bold tracking-widest text-sm uppercase">Assistente IA</span>
+                                    </div>
+                                )}
                             </div>
 
                         </div>

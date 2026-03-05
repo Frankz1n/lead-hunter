@@ -47,7 +47,7 @@ export const SortableLead = ({ lead, onClick }: KanbanLeadProps) => {
             {...attributes}
             {...listeners}
             onClick={onClick}
-            className="bg-white shadow-sm rounded-md p-4 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow border border-slate-200"
+            className={`shadow-sm rounded-md p-4 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow border ${lead.has_maintenance ? 'bg-yellow-50 border-yellow-300' : 'bg-white border-slate-200'}`}
         >
             <h3 className="text-slate-900 font-bold text-sm mb-3 line-clamp-2">{lead.company_name}</h3>
 
