@@ -109,8 +109,9 @@ export default function Crm() {
     const [isSavingComment, setIsSavingComment] = useState(false);
     const [isUploadingContract, setIsUploadingContract] = useState(false);
 
-    const handleDeleteLead = async () => {
-        if (!selectedLead) return;
+    const handleDeleteLead = async (leadToDelete?: Lead) => {
+        const lead = leadToDelete ?? selectedLead;
+        if (!lead) return;
 
         if (!window.confirm("Tem certeza que deseja excluir este lead? Esta ação não pode ser desfeita.")) {
             return;
@@ -121,13 +122,13 @@ export default function Crm() {
             const { error } = await supabase
                 .from('leads')
                 .delete()
-                .eq('id', selectedLead.id);
+                .eq('id', lead.id);
 
             if (error) throw error;
 
             toast.success('Lead excluído com sucesso!');
-            setLeads(leads => leads.filter(l => l.id !== selectedLead.id));
-            setSelectedLead(null);
+            setLeads(leads => leads.filter(l => l.id !== lead.id));
+            setSelectedLead(current => (current?.id === lead.id ? null : current));
         } catch (error) {
             console.error('Erro ao excluir lead:', error);
             toast.error('Erro ao excluir o lead. Tente novamente.');
@@ -644,7 +645,9 @@ export default function Crm() {
                                     column={column}
                                     leads={leads.filter(l => l.status === column.title || (!l.status && column.title === 'Novos Leads'))}
                                     onLeadClick={setSelectedLead}
+                                    onDeleteLead={handleDeleteLead}
                                     onDeleteColumn={handleDeleteColumn}
+                                    isDeletingLead={isDeleting}
                                 />
                             ))}
                         </SortableContext>
@@ -694,7 +697,7 @@ export default function Crm() {
                             <div className="bg-slate-200 rounded-xl w-[320px] h-[500px] border-2 border-slate-300 shadow-xl opacity-80" />
                         )}
                         {activeLead && (
-                            <SortableLead lead={activeLead} onClick={() => { }} />
+                            <SortableLead lead={activeLead} onClick={() => { }} onDelete={() => { }} />
                         )}
                     </DragOverlay>
                 </DndContext>

@@ -7,9 +7,11 @@ import type { Lead, Column } from '../pages/Crm';
 interface KanbanLeadProps {
     lead: Lead;
     onClick: () => void;
+    onDelete: (lead: Lead) => void;
+    deleteDisabled?: boolean;
 }
 
-export const SortableLead = ({ lead, onClick }: KanbanLeadProps) => {
+export const SortableLead = ({ lead, onClick, onDelete, deleteDisabled }: KanbanLeadProps) => {
     const {
         attributes,
         listeners,
@@ -45,22 +47,39 @@ export const SortableLead = ({ lead, onClick }: KanbanLeadProps) => {
             ref={setNodeRef}
             style={style}
             {...attributes}
-            {...listeners}
-            onClick={onClick}
-            className={`shadow-sm rounded-md p-4 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow border ${lead.has_maintenance ? 'bg-yellow-50 border-yellow-300' : 'bg-white border-slate-200'}`}
+            className={`relative shadow-sm rounded-md p-4 hover:shadow-md transition-shadow border ${lead.has_maintenance ? 'bg-yellow-50 border-yellow-300' : 'bg-white border-slate-200'}`}
         >
-            <h3 className="text-slate-900 font-bold text-sm mb-3 line-clamp-2">{lead.company_name}</h3>
+            <button
+                type="button"
+                title="Excluir lead"
+                disabled={deleteDisabled}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(lead);
+                }}
+                className="absolute top-2 right-2 z-10 text-slate-400 hover:text-red-600 transition-colors p-1 rounded hover:bg-red-50 disabled:opacity-40 disabled:pointer-events-none"
+            >
+                <Trash2 className="w-4 h-4" />
+            </button>
+            <div
+                {...listeners}
+                onClick={onClick}
+                className="cursor-grab active:cursor-grabbing pr-7"
+            >
+                <h3 className="text-slate-900 font-bold text-sm mb-3 line-clamp-2 pr-1">{lead.company_name}</h3>
 
-            <div className="flex flex-wrap gap-2">
-                {lead.no_website && (
-                    <div className="inline-flex items-center gap-1 bg-red-50 text-red-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
-                        <Globe className="w-3 h-3" />
-                        <span>Sem Site</span>
+                <div className="flex flex-wrap gap-2">
+                    {lead.no_website && (
+                        <div className="inline-flex items-center gap-1 bg-red-50 text-red-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
+                            <Globe className="w-3 h-3" />
+                            <span>Sem Site</span>
+                        </div>
+                    )}
+                    <div className="inline-flex items-center gap-1 bg-orange-50 text-orange-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
+                        <Flame className="w-3 h-3" />
+                        <span>Score IA: {lead.ai_score}%</span>
                     </div>
-                )}
-                <div className="inline-flex items-center gap-1 bg-orange-50 text-orange-600 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
-                    <Flame className="w-3 h-3" />
-                    <span>Score IA: {lead.ai_score}%</span>
                 </div>
             </div>
         </div>
@@ -71,10 +90,12 @@ interface KanbanColumnProps {
     column: Column;
     leads: Lead[];
     onLeadClick: (lead: Lead) => void;
+    onDeleteLead: (lead: Lead) => void;
     onDeleteColumn: (columnId: string) => void;
+    isDeletingLead?: boolean;
 }
 
-export const SortableColumn = ({ column, leads, onLeadClick, onDeleteColumn }: KanbanColumnProps) => {
+export const SortableColumn = ({ column, leads, onLeadClick, onDeleteLead, onDeleteColumn, isDeletingLead }: KanbanColumnProps) => {
     const {
         attributes,
         listeners,
@@ -135,7 +156,13 @@ export const SortableColumn = ({ column, leads, onLeadClick, onDeleteColumn }: K
             <div className="flex-1 overflow-y-auto space-y-3 pb-2 custom-scrollbar">
                 <SortableContext items={leadIds} strategy={verticalListSortingStrategy}>
                     {leads.map(lead => (
-                        <SortableLead key={lead.id} lead={lead} onClick={() => onLeadClick(lead as any)} />
+                        <SortableLead
+                            key={lead.id}
+                            lead={lead}
+                            onClick={() => onLeadClick(lead as any)}
+                            onDelete={onDeleteLead}
+                            deleteDisabled={isDeletingLead}
+                        />
                     ))}
                 </SortableContext>
                 {leads.length === 0 && (
