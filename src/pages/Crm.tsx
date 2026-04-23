@@ -746,7 +746,7 @@ export default function Crm() {
                             </div>
                             <div className="flex items-center gap-1">
                                 <button
-                                    onClick={handleDeleteLead}
+                                    onClick={() => handleDeleteLead(selectedLead)}
                                     disabled={isDeleting}
                                     title="Excluir Lead"
                                     className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-full transition-colors disabled:opacity-50"
